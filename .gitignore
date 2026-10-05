@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Adapters and benchmark output are a function of the code and the seed, and an adapter is
+# forty megabytes. The run metadata beside them is committed; the weights are not.
+adapters/*/adapter_model.safetensors
+adapters/*/tokenizer.json
+adapters/*/vocab.json
+adapters/*/merges.txt
+
+# The sanitiser's own denylist is never committed: naming what must not appear is itself the
+# disclosure.
+sanitize.toml
