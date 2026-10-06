@@ -43,6 +43,11 @@ class Outcome:
     decode_tokens_per_second: float
     prompt_tokens: int
     weight_gib: float
+    #: How many records were generated at once. It qualifies every timing above it: at batch 8,
+    #: `median_ttft_ms` is the prefill of the whole batch, not of one record, and `median_ms` is
+    #: the batch divided by eight. Neither is a single-request latency, and the README takes
+    #: those from the batch-1 sweep instead.
+    batch_size: int = 1
     notes: str = ""
 
     def save(self, directory: Path) -> Path:
@@ -58,6 +63,7 @@ class Outcome:
                     "decode_tokens_per_second": self.decode_tokens_per_second,
                     "prompt_tokens": self.prompt_tokens,
                     "weight_gib": self.weight_gib,
+                    "batch_size": self.batch_size,
                     "notes": self.notes,
                     "scores": {
                         "json_validity": str(self.report.json_validity),
@@ -158,6 +164,7 @@ def run_model(
             decode_tokens_per_second=run.median_decode_rate(),
             prompt_tokens=run.timings[0].prompt_tokens if run.timings else 0,
             weight_gib=loaded.weight_gib,
+            batch_size=batch_size,
             notes=f"batch {batch_size}, greedy, adapter={adapter or 'none'}",
         )
     finally:

@@ -40,8 +40,9 @@ def _load(split: str, limit: int | None) -> list:
 def _show(outcome: Outcome) -> None:
     print()
     print("\n".join(outcome.report.lines()))
+    qualifier = "" if outcome.batch_size == 1 else f" at batch {outcome.batch_size}"
     print(
-        f"  cost                 {outcome.median_ms:.1f} ms/record (median), "
+        f"  cost                 {outcome.median_ms:.1f} ms/record (median){qualifier}, "
         f"TTFT {outcome.median_ttft_ms:.1f} ms, {outcome.decode_tokens_per_second:.1f} tok/s, "
         f"{outcome.prompt_tokens} prompt tokens, {outcome.weight_gib:.2f} GiB of weights"
     )

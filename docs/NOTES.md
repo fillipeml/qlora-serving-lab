@@ -127,6 +127,20 @@ This is why `Settings.autocast` defaults to `"off"`. The 4-bit weights dequantis
 the matmul runs there, which on this card is both the fastest and the most numerically stable
 option — and it needs no gradient scaler, so no step can be silently skipped to overflow.
 
+## Known handicaps, reported rather than removed
+
+**The few-shot prompt never shows a robbery.** The four examples are drawn stratified by peril
+from the training split with a fixed seed, and the draw gave theft, vandalism, fire and glass.
+So the few-shot system sees *furto* demonstrated and never *roubo* — on the single field this
+corpus uses to test whether a model reads Portuguese or pattern-matches it. That is a real
+disadvantage, it is specific to the one comparison that matters most for that field, and it is
+written down here instead of being fixed by re-rolling the seed.
+
+Re-rolling until the draw looks fair is how a benchmark stops meaning anything. The principled
+alternative is eight shots, one per peril, which removes the confound and roughly doubles the
+prompt; it is not what produced the numbers in the README, and saying so costs less than
+pretending the draw was designed.
+
 ## Dead ends and corrections
 
 - **The first protected-token pattern did not protect anything accented.** It was built from the
