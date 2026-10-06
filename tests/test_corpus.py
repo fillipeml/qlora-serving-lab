@@ -177,9 +177,7 @@ class TestNoiseNeverChangesTheTruth:
 
 
 def _fold(text: str) -> str:
-    return "".join(
-        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
-    )
+    return "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
 
 
 class TestSpelledAmounts:
@@ -234,8 +232,9 @@ class TestSchema:
         )
 
     def test_a_brazilian_amount_is_understood(self) -> None:
-        assert parse('{"peril": "fire", "estimated_amount_brl": "R$ 3.500,00"}'
-                     ).estimated_amount_brl == Decimal("3500.00")
+        assert parse(
+            '{"peril": "fire", "estimated_amount_brl": "R$ 3.500,00"}'
+        ).estimated_amount_brl == Decimal("3500.00")
 
     def test_a_missing_field_is_null_and_not_false(self) -> None:
         notice = parse('{"peril": "fire"}')
@@ -403,8 +402,10 @@ class TestRuleBaseline:
 
     def test_it_answers_every_record_with_valid_json(self, validation) -> None:
         outputs = [rules.extract(e.text, e.received_on).to_target() for e in validation]
-        assert report("rules", [(e.id, e.label) for e in validation], outputs
-                      ).json_validity.rate == 1.0
+        assert (
+            report("rules", [(e.id, e.label) for e in validation], outputs).json_validity.rate
+            == 1.0
+        )
 
     def test_it_gets_most_records_exactly_right(self, validation) -> None:
         outputs = [rules.extract(e.text, e.received_on).to_target() for e in validation]
@@ -450,7 +451,7 @@ class TestRuleBaseline:
         assert rules.extract(text, date(2026, 3, 12)).peril == expected
 
     def test_a_negation_applies_to_its_own_clause_only(self) -> None:
-        """"Não houve feridos, o carro está rodando" is one negation and two facts."""
+        """ "Não houve feridos, o carro está rodando" is one negation and two facts."""
         notice = rules.extract(
             "bati o carro, não houve feridos, o carro ainda está rodando normalmente",
             date(2026, 3, 12),

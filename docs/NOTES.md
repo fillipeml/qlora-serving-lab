@@ -106,26 +106,48 @@ that every published recipe gets wrong on this hardware. That is why `COMPUTE_DT
 
 ## What that does to training
 
-The same question on the training side. Qwen2.5-1.5B-Instruct, NF4 with double quantisation,
-LoRA rank 16 on all seven projections, batch 4 with 2 accumulation steps, identical data:
+Qwen2.5-0.5B, NF4 with double quantisation, LoRA rank 16 on all seven projections, batch 4, five
+optimiser steps each, identical data:
 
-| autocast | seconds per optimiser step | measured over |
-| --- | --- | --- |
-| off (fp32 compute) | 22.1 | 40 steps |
-| bf16 | 140.0 | 3 steps |
-| fp16 | not completed | abandoned; see below |
+| autocast | per step | peak | loss reached | steps skipped |
+| --- | ---: | ---: | ---: | ---: |
+| off (fp32 compute) | 2.07 s | 2.19 GiB | 0.8537 | 0 |
+| bf16 | 2.66 s | 2.44 GiB | 0.8579 | 0 |
+| fp16 | 9.17 s | 2.44 GiB | 0.8537 | 0 |
 
-**6.4× slower with bf16 autocast than with none.** The fp16 run was abandoned: the matmul sweep
-predicts it is worse still, and at that rate a single optimiser step costs minutes. A recipe
-that branches on `torch.cuda.is_bf16_supported()` lands on the 140-second row; one that sets
-`fp16=True`, which is what every tutorial for a 6 GiB card says, lands below it.
+**fp16 autocast is 4.4x slower than none and reaches exactly the same loss.** It is pure cost.
+bf16 costs 1.29x for a feature the card does not have in hardware.
 
-The three-step bf16 figure carries more warmup per step than the forty-step one, so the true
-ratio is somewhat below 6.4×. It is not near 1.
+### A number I had to withdraw
 
-This is why `Settings.autocast` defaults to `"off"`. The 4-bit weights dequantise to fp32 and
-the matmul runs there, which on this card is both the fastest and the most numerically stable
-option — and it needs no gradient scaler, so no step can be silently skipped to overflow.
+An earlier version of this file reported **6.4x** for bf16 against none, measured on
+Qwen2.5-1.5B — 22.1 s/step against 140 s/step. That number is real and the generalisation drawn
+from it was not. On the 0.5B the same comparison is 1.29x.
+
+The difference is almost certainly memory rather than dtype: at 1.5B the bf16 run peaked at
+3.80 GiB against 3.36 GiB for fp32 compute, on a 6 GiB card also holding the optimiser state.
+"Almost certainly" is as far as one measurement goes, so the README reports the 0.5B numbers —
+measured across three configurations on the model the whole report is about — and this paragraph
+records the 1.5B observation without a cause attached to it.
+
+This is the second time in this repository that a single measurement on the 1.5B looked like a
+general finding and was not; the first was batching. Both had the same shape: a model close
+enough to the memory ceiling that the allocator, not the arithmetic, was being measured.
+
+## The one line every 4-bit recipe sets without thinking
+
+`bnb_4bit_compute_dtype` decides what the 4-bit weights are dequantised into before they are
+multiplied. Same weights, same prompts, only that line:
+
+| compute dtype | weights | TTFT | decode |
+| --- | ---: | ---: | ---: |
+| fp16 | 0.44 GiB | 1083.3 ms | 26.7 tok/s |
+| bf16 | 0.44 GiB | 246.9 ms | 31.8 tok/s |
+| fp32 | 0.69 GiB | 219.2 ms | 34.2 tok/s |
+
+bf16 is **4.4x faster to first token than fp16 at identical memory**. fp32 is faster still and
+costs 0.25 GiB more, because the layers that are never quantised are held in the compute dtype.
+The recommendation on this card is not "use fp32", it is "anything but fp16".
 
 ## Known handicaps, reported rather than removed
 

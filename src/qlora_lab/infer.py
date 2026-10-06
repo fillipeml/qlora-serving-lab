@@ -67,8 +67,13 @@ class Loaded:
 #: this to fp16 or bf16 and moves on; on this card it is the single largest serving decision
 #: available, because the 4-bit weights are unpacked and then handed to exactly the GEMM kernel
 #: that `bench.py` shows to be nine times slower in fp16 than in fp32. Changing this one line
-#: and nothing else more than halves time to first token at identical memory and identical
-#: decode rate. The default here is therefore the measurement, not the convention.
+#: and nothing else takes time to first token from 1083 ms to 247 ms at *identical* memory
+#: (bf16) or to 219 ms for 0.25 GiB more (fp32, which also holds the unquantised embeddings and
+#: head). The recommendation on this card is not "use fp32", it is "anything but fp16"; bf16
+#: when memory binds and fp32 when it does not.
+#:
+#: fp32 here because it is what every number in the README was measured with, and a default
+#: that disagrees with the published measurements is worse than a slower one.
 COMPUTE_DTYPE = torch.float32
 
 
@@ -241,7 +246,13 @@ def generate(
         first = prefill.logits[:, -1, :].argmax(-1, keepdim=True)
         torch.cuda.synchronize()
         ttft_ms = (time.perf_counter() - began) * 1000
+        del prefill, first
 
+        # Timed from here, not from `began`. `generate` runs its own prefill, so measuring the
+        # whole block would charge the prompt twice and the decode window — the difference
+        # between the two — would be inflated by exactly one prefill. Harmless at a 100-token
+        # prompt and a 44% error on a 1,190-token one, which is the case the report cares about.
+        generation_started = time.perf_counter()
         generated = loaded.model.generate(
             **encoded,
             max_new_tokens=max_new_tokens,
@@ -249,8 +260,7 @@ def generate(
             pad_token_id=tokenizer.pad_token_id,
         )
         torch.cuda.synchronize()
-        total_ms = (time.perf_counter() - began) * 1000
-        del prefill, first
+        total_ms = (time.perf_counter() - generation_started) * 1000
 
         new_tokens = generated[:, prompt_length:]
         texts = tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
