@@ -49,7 +49,11 @@ def _show(outcome: Outcome) -> None:
 
 
 def cmd_data(args: argparse.Namespace) -> int:
-    counts = write(DATA, generate(seed=args.seed))
+    from .shift import generate_shifted
+
+    # The shifted set is written beside the others and is a test split like any other, except
+    # that no system in this repository has seen a word of its vocabulary.
+    counts = write(DATA, generate(seed=args.seed) + generate_shifted())
     print(f"wrote {counts} to {DATA}/")
     return 0
 
@@ -241,7 +245,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     def common(p: argparse.ArgumentParser) -> None:
         # `validation` by default on purpose: see the module docstring.
-        p.add_argument("--split", default="validation", choices=("train", "validation", "test"))
+        p.add_argument(
+            "--split",
+            default="validation",
+            choices=("train", "validation", "test", "shifted"),
+        )
         p.add_argument("--limit", type=int, default=None)
         p.add_argument("--model", default=DEFAULT_MODEL)
         p.add_argument("--precision", default="nf4")
@@ -303,7 +311,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_bench)
 
     p = sub.add_parser("show", help="one record through every saved system")
-    p.add_argument("--split", default="test", choices=("train", "validation", "test"))
+    p.add_argument("--split", default="test", choices=("train", "validation", "test", "shifted"))
     p.add_argument("--record", default=None, help="a record id; omitted, picks a disagreement")
     p.set_defaults(func=cmd_show)
 

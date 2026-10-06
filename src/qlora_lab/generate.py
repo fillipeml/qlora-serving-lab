@@ -609,7 +609,8 @@ def generate(seed: int = 20261005) -> list[Example]:
 def write(directory: Path, examples: list[Example]) -> dict[str, int]:
     directory.mkdir(parents=True, exist_ok=True)
     counts: dict[str, int] = {}
-    for split, _ in SPLITS:
+    names = {e.split for e in examples}
+    for split, _ in SPLITS + tuple((n, 0) for n in sorted(names - {s for s, _ in SPLITS})):
         rows = [e for e in examples if e.split == split]
         path = directory / f"{split}.jsonl"
         path.write_text(

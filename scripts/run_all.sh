@@ -57,7 +57,18 @@ $PY -m qlora_lab prompted --split test --model "$MODEL" --styles zero-shot few-s
 $PY -m qlora_lab tuned --split test --model "$MODEL" --adapter "$ADAPTER" --batch-size 8
 
 echo
-echo "=== 8. the paired comparisons ==="
+echo "=== 8. the held-out vocabulary, which is the actual question ==="
+# The rules and the generator share an author, and the adapter was trained on the same
+# templates the test split is drawn from. Both scores above are optimistic and they are
+# optimistic in ways that do not cancel. These 200 records use different words for the same
+# eight perils, different date forms, different phrasings for every boolean, and twenty-four
+# municipalities that are not in the rule set's gazetteer.
+$PY -m qlora_lab baseline --split shifted
+$PY -m qlora_lab prompted --split shifted --model "$MODEL" --styles zero-shot few-shot --batch-size 8
+$PY -m qlora_lab tuned --split shifted --model "$MODEL" --adapter "$ADAPTER" --batch-size 8
+
+echo
+echo "=== 9. the paired comparisons ==="
 $PY -m qlora_lab compare \
   "rules.test.json" \
   "zero-shot-${SHORT}-nf4.test.json" \

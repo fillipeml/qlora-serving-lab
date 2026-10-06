@@ -256,6 +256,48 @@ def clock_health(results: list[MatmulResult]) -> dict:
     }
 
 
+def _nvidia_smi() -> dict:
+    """Clock, temperature and power, straight from the driver.
+
+    Two different runs of this repository's own benchmark differed by 4x and by 2x for reasons
+    that turned out to be clock state — once too cold to have ramped, once hot enough to
+    throttle. Neither is visible from inside PyTorch. Recording it costs one subprocess and
+    makes a saved benchmark say what state the card was in when it was taken.
+    """
+    import shutil
+    import subprocess
+
+    binary = shutil.which("nvidia-smi")
+    if not binary:
+        return {}
+    try:
+        out = (
+            subprocess.run(
+                [
+                    binary,
+                    "--query-gpu=clocks.sm,temperature.gpu,power.draw,clocks_throttle_reasons.active",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            .stdout.strip()
+            .splitlines()[0]
+        )
+    except (subprocess.SubprocessError, OSError, IndexError):
+        return {}
+    fields = [f.strip() for f in out.split(",")]
+    if len(fields) < 3:
+        return {}
+    return {
+        "sm_clock_mhz": fields[0],
+        "temperature_c": fields[1],
+        "power_w": fields[2],
+    }
+
+
 def describe_device() -> dict:
     if not torch.cuda.is_available():
         return {"cuda": False}
@@ -271,6 +313,7 @@ def describe_device() -> dict:
         "torch": torch.__version__,
         "is_bf16_supported_default": torch.cuda.is_bf16_supported(),
         "bf16_in_hardware": bf16_is_real(),
+        **_nvidia_smi(),
     }
 
 
