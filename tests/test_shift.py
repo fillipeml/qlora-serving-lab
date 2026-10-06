@@ -127,6 +127,24 @@ class TestTheLabelsAreStillExact:
             if item.label.peril in {"theft", "robbery"}:
                 assert item.label.vehicle_drivable is None
 
+    def test_every_stated_amount_is_recoverable_from_the_text(self) -> None:
+        # The same invariant as the main corpus. The held-out set never uses the loose style
+        # that broke there, but the guard belongs on both or it guards nothing.
+        from qlora_lab.generate import spell_amount
+
+        for item in SHIFTED:
+            value = item.label.estimated_amount_brl
+            if value is None:
+                continue
+            amount = int(value)
+            folded = rules.fold(item.text)
+            forms = [
+                f"{amount:,}".replace(",", "."),
+                rules.fold(spell_amount(amount)),
+                str(amount),
+            ]
+            assert any(form in folded for form in forms), f"{item.id}: {item.text}"
+
     def test_the_split_is_named_so_nothing_mistakes_it_for_test(self) -> None:
         assert {e.split for e in SHIFTED} == {"shifted"}
 

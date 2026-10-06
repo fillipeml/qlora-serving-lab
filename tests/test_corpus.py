@@ -117,6 +117,34 @@ class TestTheLabelsAreTrue:
             if item.label.occurred_on:
                 assert item.label.occurred_on <= item.received_on
 
+    def test_every_stated_amount_is_recoverable_from_the_text(self, corpus) -> None:
+        """The label has to be readable from the message, or it is not a label.
+
+        The whole corpus design rests on the record being exact by construction. This is the
+        one invariant that checks it rather than assuming it, and it caught a real defect: the
+        loose amount style wrote `value // 1000` unconditionally, so 5,900 was rendered as
+        "uns 5 mil" while the label said 5900. 37 of 772 records carried a message contradicting
+        their own label, and every system was marked wrong on all of them for reading correctly.
+        """
+        from qlora_lab.generate import spell_amount
+
+        for item in corpus:
+            value = item.label.estimated_amount_brl
+            if value is None:
+                continue
+            amount = int(value)
+            folded = _fold(item.text).lower()
+            forms = [
+                f"{amount:,}".replace(",", "."),  # R$ 3.500,00
+                _fold(spell_amount(amount)).lower(),  # três mil e quinhentos
+                str(amount),  # 3500 reais
+            ]
+            if amount % 1000 == 0:
+                forms.append(f"{amount // 1000} mil")
+            assert any(form in folded for form in forms), (
+                f"{item.id} is labelled {amount} and its message does not say so: {item.text}"
+            )
+
     def test_the_amount_matches_the_peril(self, corpus) -> None:
         # A chipped windscreen and a stolen car are three orders of magnitude apart; a corpus
         # that ignores that trains a model to read the number without reading the sentence.
@@ -449,7 +477,7 @@ class TestRuleBaseline:
 
 #: Written down rather than computed at import, which would make the test assert only that
 #: the generator equals itself.
-FROZEN_TEST_DIGEST = "14cd6e024c94290655dd92156fcbc0f9c4fef5544255c50d3a85946083c8116c"
+FROZEN_TEST_DIGEST = "caf72765ebd5d3c16d8645ca48bf171f2659351db474f718daf7eebed5cd9af8"
 
 
 class TestTheShippedData:

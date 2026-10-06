@@ -418,13 +418,22 @@ def _amount_clause(rng: random.Random, peril: str) -> tuple[str, Decimal]:
         text = f"R$ {value:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
         clause = rng.choice((f"o orçamento ficou em {text}", f"o prejuízo é de {text}"))
     elif style == "loose":
+        # "uns 5 mil" only when the value really is five thousand. The first version wrote
+        # `value // 1000` unconditionally, so a loss of 5,900 was reported as "uns 5 mil" while
+        # the label said 5900 — a message stating an amount the label contradicts. 37 of 772
+        # records carried it, and every system was scored wrong on all of them for reading the
+        # text correctly. `test_every_stated_amount_is_recoverable_from_the_text` is the guard.
+        #
+        # One rng.choice either way, so the fix changes those records' wording and nothing else
+        # about the corpus.
+        thousands = value >= 1000 and value % 1000 == 0
         clause = rng.choice(
             (
                 f"orçaram em uns {value // 1000} mil reais"
-                if value >= 1000
-                else f"deu uns {value} reais",
+                if thousands
+                else f"orçaram em uns {value} reais",
                 f"o conserto sai por {value // 1000} mil"
-                if value >= 1000
+                if thousands
                 else f"o conserto sai por {value} reais",
             )
         )
