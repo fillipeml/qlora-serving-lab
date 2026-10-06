@@ -55,8 +55,8 @@ TARGET_MODULES: tuple[str, ...] = (
 
 @dataclass
 class Settings:
-    model_id: str = "Qwen/Qwen2.5-1.5B-Instruct"
-    output: str = "adapters/qwen2.5-1.5b-nf4-r16"
+    model_id: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    output: str = "adapters/qwen2.5-0.5b-nf4-r16"
     rank: int = 16
     #: Two times the rank. The ratio matters more than either number: alpha/rank is the scale
     #: the adapter's output is multiplied by, so raising the rank without raising alpha quietly

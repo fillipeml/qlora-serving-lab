@@ -111,7 +111,9 @@ def run_model(
     adapter: str | None = None,
     shot_pool: list[Example] | None = None,
     batch_size: int = 1,
-    max_new_tokens: int = 160,
+    # 110, because the target record is about 55 tokens. The cap only binds on a model that
+    # does not know when to stop, and for that model every extra token is wasted wall clock.
+    max_new_tokens: int = 110,
 ) -> Outcome:
     """Run one of the three prompting styles over a split.
 
