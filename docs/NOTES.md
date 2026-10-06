@@ -17,7 +17,8 @@ is the one most reports leave out and the one that sets the bar.
 A GTX 1660 Ti is TU116: Turing, compute capability 7.5, 6 GiB, and the one Turing chip NVIDIA
 shipped **without tensor cores**. That last detail is why everything below happens.
 
-Matrix multiply, 4096², PyTorch 2.11 + CUDA 12.8:
+Matrix multiply, 4096², PyTorch 2.11 + CUDA 12.8, **with the card warmed up first** — see the
+clock note below, which is the single thing most likely to make these numbers irreproducible:
 
 | dtype | TFLOP/s | |
 | --- | --- | --- |
@@ -38,6 +39,28 @@ Ruled out as explanations:
 - Not cuBLASLt: `DISABLE_ADDMM_CUDA_LT=1` changes nothing.
 - Not warmup, not size, not process state: reproduced in isolated processes at 1024, 2048 and
   4096.
+
+### The clock state, which almost cost me the whole measurement
+
+The same sweep, run twice on the same machine an hour apart:
+
+| | fp32 | fp16 | bf16 | fp16 via fp32 | element-wise fp32 |
+| --- | --- | --- | --- | --- | --- |
+| warm | 5.43 | 0.63 | 2.95 | 4.70 | 251 GB/s |
+| cold | 1.31 | 0.15 | 0.69 | 1.22 | 88 GB/s |
+
+Everything is four times lower and **every ratio is identical to two decimal places**
+(fp16/fp32 is 0.116 warm and 0.115 cold). An idle NVIDIA card sits in a low power state and
+raises its clocks only under sustained load; a benchmark that starts measuring immediately
+measures the ramp instead of the card. The per-measurement warmup normally written into these
+scripts is sized to pay for kernel selection and takes milliseconds, which is nowhere near
+enough.
+
+What makes this worth writing down rather than quietly fixing: the cold numbers are internally
+consistent and would have supported every conclusion in this document. The giveaway was that
+fp32 came out at 24% of the figure NVIDIA quotes for the card. `bench.py` now spins the clocks
+for four seconds before measuring and records the measured fp32 peak as a fraction of the
+quoted one, so any run of it says whether it was taken at full clock.
 
 And the guard everybody uses does not see any of it:
 
@@ -81,6 +104,29 @@ dequantised weights go straight to the slow kernel. Changing that one line and n
 that every published recipe gets wrong on this hardware. That is why `COMPUTE_DTYPE` in
 `infer.py` is fp32 and carries a comment rather than being the usual constant.
 
+## What that does to training
+
+The same question on the training side. Qwen2.5-1.5B-Instruct, NF4 with double quantisation,
+LoRA rank 16 on all seven projections, batch 4 with 2 accumulation steps, identical data:
+
+| autocast | seconds per optimiser step | measured over |
+| --- | --- | --- |
+| off (fp32 compute) | 22.1 | 40 steps |
+| bf16 | 140.0 | 3 steps |
+| fp16 | not completed | abandoned; see below |
+
+**6.4× slower with bf16 autocast than with none.** The fp16 run was abandoned: the matmul sweep
+predicts it is worse still, and at that rate a single optimiser step costs minutes. A recipe
+that branches on `torch.cuda.is_bf16_supported()` lands on the 140-second row; one that sets
+`fp16=True`, which is what every tutorial for a 6 GiB card says, lands below it.
+
+The three-step bf16 figure carries more warmup per step than the forty-step one, so the true
+ratio is somewhat below 6.4×. It is not near 1.
+
+This is why `Settings.autocast` defaults to `"off"`. The 4-bit weights dequantise to fp32 and
+the matmul runs there, which on this card is both the fastest and the most numerically stable
+option — and it needs no gradient scaler, so no step can be silently skipped to overflow.
+
 ## Dead ends and corrections
 
 - **The first protected-token pattern did not protect anything accented.** It was built from the
@@ -97,6 +143,30 @@ that every published recipe gets wrong on this hardware. That is why `COMPUTE_DT
   Caught because 40 steps finished implausibly fast.
 - **Three benchmark lambdas captured loop variables that were deleted afterwards.** Ruff's B023
   and F821 both fired. Harmless as written, wrong the moment the call became lazy.
+- **Batching helps or hurts depending on the model, and I nearly reported the wrong one.** On
+  Qwen2.5-0.5B, batch 8 is 3.6× faster than batch 1 and the outputs are identical on every
+  record checked. On Qwen2.5-1.5B the same comparison came out 4× *slower* — 399 seconds for
+  eight records against 105 one at a time. The plausible explanation is that the larger model at
+  batch 8 approaches the 6 GiB wall and the allocator starts working for a living, but I have
+  one measurement of it and it is not enough to publish a cause, so the README reports the 0.5B
+  sweep, which was measured properly across five batch sizes, and says nothing about why the
+  1.5B behaves differently.
+- **A cap that measured itself.** Generation was capped at 110 new tokens because the target
+  record is about 55. The base model answers with a fenced, pretty-printed object that is longer
+  than that, so 296 of 300 outputs were cut mid-record and scored as invalid JSON — a number
+  that described my cap and not the model. Raised to 256. The interesting part is what it
+  uncovered: at 256 tokens only 3 of 8 objects close, and at 512 still exactly 3 of 8. The base
+  model is not running out of budget, it is looping, repeating `third_party_involved` and
+  `injuries` until it is stopped. That is the real finding, and the bad cap hid it behind a
+  number that looked like the same thing.
+- **A benchmark that overwrote its own results.** `bench --parts matmul` and
+  `bench --parts precision batch` both write `results/bench.json`, and the save replaced the
+  file. The second run silently deleted the matmul table from an artifact that still looked
+  complete. It merges now.
+- **A background run whose output I filtered.** The autocast comparison was piped through a
+  `grep` for the final summary line, so a 49-minute bf16 run showed nothing at all and looked
+  like a crash. It was not; it was slow. Re-run with nothing filtered, three steps told the
+  whole story in seven minutes.
 - **The first generator wrote records nobody could have written** — a vandalism claim with
   another vehicle involved, a cracked windscreen that immobilised the car, a stolen car that was
   still drivable. Every one of those teaches a model something false and scores it on something
