@@ -218,6 +218,45 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_hybrid(args: argparse.Namespace) -> int:
+    """Compose a saved model run with the rule extractor. No GPU, no model, no re-running."""
+    import time
+
+    from .evaluate import Outcome
+    from .hybrid import compose_outputs, score
+
+    path = RESULTS / args.run if (RESULTS / args.run).exists() else Path(args.run)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload["split"] != args.split:
+        print(f"{path.name} is the {payload['split']} split, not {args.split}")
+        return 1
+
+    examples = read(DATA, args.split)
+    started = time.perf_counter()
+    composed = compose_outputs(examples, payload["outputs"])
+    rules_ms = (time.perf_counter() - started) * 1000 / max(len(examples), 1)
+    name = f"hybrid:{payload['system']}"
+
+    _show(
+        Outcome(
+            system=name,
+            split=args.split,
+            outputs=composed,
+            report=score(name, examples, payload["outputs"]),
+            # The model's cost plus the rule extractor's, which is the honest total: the hybrid
+            # runs both, and the second one is free only in the sense that a millisecond is.
+            median_ms=payload["median_ms"] + rules_ms,
+            median_ttft_ms=payload["median_ttft_ms"],
+            decode_tokens_per_second=payload["decode_tokens_per_second"],
+            prompt_tokens=payload["prompt_tokens"],
+            weight_gib=payload["weight_gib"],
+            batch_size=payload.get("batch_size", 1),
+            notes=f"composed from {path.name}; arithmetic fields from the rule extractor",
+        )
+    )
+    return 0
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     """One record through every saved system, from the committed results and no GPU."""
     from .show import describe, load_runs, pick_disagreement, prepare
@@ -310,6 +349,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("matmul", "precision", "batch"),
     )
     p.set_defaults(func=cmd_bench)
+
+    p = sub.add_parser("hybrid", help="compose a saved model run with the rule extractor")
+    p.add_argument("run", help="a saved model run, e.g. tuned-Qwen2.5-0.5B-Instruct-nf4.test.json")
+    p.add_argument("--split", default="test", choices=("train", "validation", "test", "shifted"))
+    p.set_defaults(func=cmd_hybrid)
 
     p = sub.add_parser("show", help="one record through every saved system")
     p.add_argument("--split", default="test", choices=("train", "validation", "test", "shifted"))

@@ -19,6 +19,7 @@ was to rescore recorded outputs rather than spend another hour of GPU.
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,7 +53,8 @@ class Outcome:
 
     def save(self, directory: Path) -> Path:
         directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f"{self.system.replace('/', '_').replace(':', '-')}.{self.split}.json"
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", self.system).strip("-")
+        path = directory / f"{safe}.{self.split}.json"
         path.write_text(
             json.dumps(
                 {
