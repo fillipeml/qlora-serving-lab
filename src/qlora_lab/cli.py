@@ -213,6 +213,28 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_show(args: argparse.Namespace) -> int:
+    """One record through every saved system, from the committed results and no GPU."""
+    from .show import describe, load_runs, pick_disagreement, prepare
+
+    examples = prepare(DATA, args.split)
+    runs = load_runs(RESULTS, args.split)
+    if not runs:
+        print(f"no saved runs for the {args.split} split; run the evaluations first")
+        return 1
+
+    if args.record:
+        chosen = next((e for e in examples if e.id == args.record), None)
+        if chosen is None:
+            print(f"no record {args.record} in the {args.split} split")
+            return 1
+    else:
+        chosen = pick_disagreement(examples, runs) or examples[0]
+
+    print("\n".join(describe(chosen, runs)))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qlora_lab", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -280,6 +302,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_bench)
 
+    p = sub.add_parser("show", help="one record through every saved system")
+    p.add_argument("--split", default="test", choices=("train", "validation", "test"))
+    p.add_argument("--record", default=None, help="a record id; omitted, picks a disagreement")
+    p.set_defaults(func=cmd_show)
+
     p = sub.add_parser("compare", help="paired tests between saved runs")
     p.add_argument("runs", nargs="+")
     p.set_defaults(func=cmd_compare)
@@ -288,6 +315,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Every message in the corpus is Portuguese, and a Windows console defaults to a codepage
+    # that cannot print it: the text comes out as mojibake and a redirect to a file raises
+    # UnicodeEncodeError outright. Reconfiguring here rather than asking the reader to set
+    # PYTHONIOENCODING, because a tool that cannot print its own data is broken.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     args = build_parser().parse_args(argv)
     return int(args.func(args))
 
