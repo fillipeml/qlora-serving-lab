@@ -39,6 +39,29 @@ class MatmulResult:
     note: str = ""
 
 
+def warm_up_clocks(seconds: float = 4.0) -> None:
+    """Spin the GPU up before measuring anything.
+
+    An idle NVIDIA card sits in a low power state and raises its clocks only once there is
+    sustained work. A benchmark that starts measuring immediately measures the ramp. This
+    repository has both versions on record: run cold, the sweep reported 1.31 TFLOP/s fp32;
+    run warm, 5.43 against a quoted peak of 5.44 — and every ratio between dtypes was identical
+    to two decimal places, which is exactly the shape that gets mistaken for a real difference.
+
+    Four seconds of large fp32 multiplies is enough on this card. The per-measurement warmup in
+    `_time` is not: it is sized to pay for kernel selection, which takes milliseconds.
+    """
+    a = torch.randn(4096, 4096, device="cuda", dtype=torch.float32)
+    b = torch.randn(4096, 4096, device="cuda", dtype=torch.float32)
+    deadline = time.perf_counter() + seconds
+    while time.perf_counter() < deadline:
+        for _ in range(10):
+            a @ b
+        torch.cuda.synchronize()
+    del a, b
+    torch.cuda.empty_cache()
+
+
 def _time(call, iterations: int) -> float:
     for _ in range(20):
         call()
@@ -56,6 +79,7 @@ def matmul_sweep(sizes: tuple[int, ...] = (1024, 2048, 4096)) -> list[MatmulResu
     Warmed up before every measurement, because the first call at a new shape and dtype pays for
     kernel selection and would otherwise be charged to the dtype.
     """
+    warm_up_clocks()
     results: list[MatmulResult] = []
     for size in sizes:
         iterations = 100 if size <= 2048 else 30
@@ -96,6 +120,7 @@ def bandwidth_check(size: int = 2048) -> list[MatmulResult]:
     this card. It is not — element-wise fp16 reaches the same bandwidth as fp32, so the loss is
     specific to the GEMM path.
     """
+    warm_up_clocks()
     results = []
     for name, dtype in (("fp32", torch.float32), ("fp16", torch.float16)):
         a = torch.randn(size * size, device="cuda", dtype=dtype)
@@ -133,6 +158,7 @@ def serving_sweep(
     """
     from . import infer
 
+    warm_up_clocks()
     results: list[ServingResult] = []
     for precision in precisions:
         loaded = None
@@ -202,6 +228,34 @@ def batch_sweep(
     return rows
 
 
+#: What NVIDIA quotes for this card at boost clock, in TFLOP/s fp32: 1536 shaders x 2 flops x
+#: 1.77 GHz. Used only to say whether a particular run was measured at full clock, because a
+#: throttled run gives numbers that are uniformly low and ratios that are unchanged — which is
+#: exactly the shape that gets mistaken for a real difference between two configurations.
+QUOTED_FP32_TFLOPS = 5.44
+
+
+def clock_health(results: list[MatmulResult]) -> dict:
+    """How close the largest fp32 multiply came to the card's quoted peak.
+
+    One run of this repository's own sweep measured 5.43 against a quoted 5.44; a second, under
+    sustained load an hour later, measured 1.31 — a quarter of it, with every ratio between
+    dtypes preserved to two decimal places. Both are true measurements of different clock
+    states, and a report that does not say which one it took is not reproducible. So the figure
+    is recorded beside the numbers it qualifies.
+    """
+    fp32 = [r for r in results if r.dtype == "fp32"]
+    if not fp32:
+        return {}
+    best = max(r.tflops for r in fp32)
+    return {
+        "measured_peak_fp32_tflops": round(best, 2),
+        "quoted_peak_fp32_tflops": QUOTED_FP32_TFLOPS,
+        "fraction_of_quoted": round(best / QUOTED_FP32_TFLOPS, 3),
+        "at_full_clock": best > 0.85 * QUOTED_FP32_TFLOPS,
+    }
+
+
 def describe_device() -> dict:
     if not torch.cuda.is_available():
         return {"cuda": False}
@@ -221,8 +275,21 @@ def describe_device() -> dict:
 
 
 def save(path: Path, payload: dict) -> Path:
+    """Merge into the existing file rather than replacing it.
+
+    `bench --parts matmul` and `bench --parts precision batch` are two runs of the same command
+    and both write here. Replacing meant the second silently deleted the first's results, which
+    is how the matmul table went missing from an artifact that still looked complete.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    existing: dict = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = {}
+    existing.update(payload)
+    path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     return path
 
 

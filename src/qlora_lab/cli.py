@@ -25,7 +25,11 @@ from .generate import generate, read, write
 
 DATA = Path("data")
 RESULTS = Path("results")
-DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+# 0.5B, not 1.5B. Both fit; the smaller one is the honest subject for a report about one
+# consumer card, because it is the size at which the whole table — four systems, 300 records,
+# six precisions and a batch sweep — can actually be run and re-run. The 1.5B appears once, as
+# a scaling row, measured the same way.
+DEFAULT_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 
 
 def _load(split: str, limit: int | None) -> list:
@@ -68,6 +72,7 @@ def cmd_prompted(args: argparse.Namespace) -> int:
                 precision=args.precision,
                 shot_pool=pool,
                 batch_size=args.batch_size,
+                max_new_tokens=args.max_new_tokens,
             )
         )
     return 0
@@ -113,6 +118,7 @@ def cmd_tuned(args: argparse.Namespace) -> int:
             precision=args.precision,
             adapter=args.adapter,
             batch_size=args.batch_size,
+            max_new_tokens=args.max_new_tokens,
         )
     )
     return 0
@@ -125,8 +131,17 @@ def cmd_bench(args: argparse.Namespace) -> int:
     print(json.dumps(payload["device"], indent=2))
 
     if "matmul" in args.parts:
-        payload["matmul"] = bench.as_json(bench.matmul_sweep())
+        results = bench.matmul_sweep()
+        payload["matmul"] = bench.as_json(results)
         payload["bandwidth"] = bench.as_json(bench.bandwidth_check())
+        payload["clock"] = bench.clock_health(results)
+        print(
+            "\nclock: fp32 peaked at "
+            f"{payload['clock']['measured_peak_fp32_tflops']} TFLOP/s, "
+            f"{payload['clock']['fraction_of_quoted']:.0%} of the card's quoted "
+            f"{payload['clock']['quoted_peak_fp32_tflops']}"
+            + ("" if payload["clock"]["at_full_clock"] else "  <- THROTTLED, numbers are low")
+        )
         print("\nmatrix multiply, TFLOP/s")
         for row in payload["matmul"]:
             print(f"  {row['dtype']:14s} n={row['size']:5d}  {row['tflops']:6.2f}")
@@ -209,6 +224,11 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--model", default=DEFAULT_MODEL)
         p.add_argument("--precision", default="nf4")
         p.add_argument("--batch-size", type=int, default=1)
+        # Generous by default. A cap that binds is not a measurement of the model, it is a
+        # measurement of the cap: at 110 tokens the base model's pretty-printed, fenced object
+        # was cut mid-record and 296 of 300 outputs scored as invalid JSON for a reason that
+        # had nothing to do with the model.
+        p.add_argument("--max-new-tokens", type=int, default=256)
 
     p = sub.add_parser("data", help="write the splits")
     p.add_argument("--seed", type=int, default=20261005)
@@ -228,9 +248,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", default="adapters/run")
     p.add_argument("--rank", type=int, default=16)
     p.add_argument("--alpha", type=int, default=32)
-    p.add_argument("--epochs", type=float, default=3.0)
+    p.add_argument("--epochs", type=float, default=2.0)
     p.add_argument("--learning-rate", type=float, default=2e-4)
-    p.add_argument("--accumulation", type=int, default=8)
+    # 2, matching Settings. With a batch of 4 that is an effective batch of 8 and 125
+    # optimiser steps per epoch. At accumulation 8 one epoch is 32 steps, which is too few for
+    # the adapter to converge — measured: the format is learned, the content is not.
+    p.add_argument("--accumulation", type=int, default=2)
     p.add_argument("--precision", default="nf4-dq")
     p.add_argument("--eval-size", type=int, default=64)
     p.add_argument("--autocast", default="off", choices=("off", "fp16", "bf16"))
