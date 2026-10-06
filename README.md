@@ -13,6 +13,12 @@ it scores. One of them uses no model at all, which is the comparison most report
 the one that sets the bar. The best one is a composition of two of the others, and which two is
 the result this repository exists to produce.
 
+> **Companion repository.** [`claims-intake-rag`](https://github.com/fillipeml/claims-intake-rag)
+> takes the other half of the same problem: not turning a short notice into a record, but answering
+> questions about one claim from its scanned, OCR'd documents — or refusing to. Same domain, same
+> card, the opposite end of the stack: retrieval, hybrid search with a measured ablation, and serving
+> over Server-Sent Events, where this one measures training, quantisation and the hardware itself.
+
 ## What it found
 
 **A 0.5B model, fine-tuned for nine minutes on a 2019 gaming GPU, beats a hand-written rule
