@@ -419,6 +419,23 @@ class TestRuleBaseline:
         result = report("rules", [(e.id, e.label) for e in validation], outputs)
         assert result.asserted_absence.rate < 0.02
 
+    @pytest.mark.parametrize(
+        "text", ["o conserto sai por R$ 3.500.00", "R$ 1.2.3", "deu R$ 12.34.56 reais"]
+    )
+    def test_an_amount_it_cannot_read_is_declined_rather_than_crashed(self, text: str) -> None:
+        """Two dots, neither a thousands group nor a decimal point.
+
+        This corpus cannot produce it, which is why 107 tests never found it: the generator only
+        ever writes a well-formed amount. A speech recogniser produces it readily — it hears
+        "três mil e quinhentos" and writes the decimal separator as a dot after already grouping
+        with one — and `Decimal("3.500.00")` raises. The companion repository that feeds this one
+        transcripts found it in the first thirty seconds of its first real run.
+
+        Declining is the right answer and not merely the safe one: the rule set has no way to
+        know which dot is which, and guessing wrong is wrong by a factor of a hundred.
+        """
+        assert rules.extract(text, date(2026, 3, 12)).estimated_amount_brl is None
+
     def test_it_does_not_fill_the_state_from_the_gazetteer(self) -> None:
         """It knows Goiânia is in GO. The message did not say so, so the field stays null."""
         notice = rules.extract("bati o carro aqui em Goiânia", date(2026, 3, 12))

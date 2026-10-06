@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from .generate import CITIES, HUNDREDS, TENS, UNITS
 from .schema import Notice
@@ -233,7 +233,16 @@ def extract_amount(folded: str) -> Decimal | None:
             digits = digits.replace(".", "").replace(",", ".")
         elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", digits):
             digits = digits.replace(".", "")
-        return Decimal(digits)
+        try:
+            return Decimal(digits)
+        except InvalidOperation:
+            # "R$ 3.500.00" — two dots, neither a thousands group nor a decimal point. This
+            # corpus cannot produce it and a speech recogniser produces it readily, writing the
+            # decimal separator as a dot after already grouping with one. The rule set has no
+            # way to know which dot is which, and guessing wrong is wrong by a factor of a
+            # hundred, so it declines. Going silent is the correct failure for a rule system and
+            # the whole reason the report separates a missed value from a wrong one.
+            return None
     loose = re.search(r"(\d+)\s*mil\b", folded)
     if loose:
         return Decimal(loose.group(1)) * 1000
