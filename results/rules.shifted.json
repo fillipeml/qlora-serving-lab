@@ -1,11 +1,12 @@
 {
   "system": "rules",
   "split": "shifted",
-  "median_ms": 0.1419745001476258,
+  "median_ms": 0.1400785002624616,
   "median_ttft_ms": 0.0,
   "decode_tokens_per_second": 0.0,
   "prompt_tokens": 0,
   "weight_gib": 0.0,
+  "batch_size": 1,
   "notes": "no model; written by the author of the generator, so read it as a ceiling",
   "scores": {
     "json_validity": "100.0% [98.1%, 100.0%] n=200",

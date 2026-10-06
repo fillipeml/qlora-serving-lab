@@ -1,0 +1,220 @@
+{
+  "device": {
+    "cuda": true,
+    "device": "NVIDIA GeForce GTX 1660 Ti",
+    "compute_capability": "7.5",
+    "total_vram_gib": 6.0,
+    "torch": "2.11.0+cu128",
+    "is_bf16_supported_default": true,
+    "bf16_in_hardware": false,
+    "sm_clock_mhz": "1500",
+    "temperature_c": "65",
+    "power_w": "20.71"
+  },
+  "serving": [
+    {
+      "precision": "fp32",
+      "weight_gib": 1.840416431427002,
+      "peak_gib": 2.178953170776367,
+      "ttft_ms": 210.91949997935444,
+      "decode_tokens_per_second": 43.910401985990575,
+      "load_seconds": 2.803158099995926
+    },
+    {
+      "precision": "fp16",
+      "weight_gib": 0.9207258224487305,
+      "peak_gib": 1.0940065383911133,
+      "ttft_ms": 1083.5138999973424,
+      "decode_tokens_per_second": 34.179799337691236,
+      "load_seconds": 1.9472373999888077
+    },
+    {
+      "precision": "bf16",
+      "weight_gib": 0.9207258224487305,
+      "peak_gib": 1.0940070152282715,
+      "ttft_ms": 239.11369999404997,
+      "decode_tokens_per_second": 40.11476286651776,
+      "load_seconds": 1.7617444000206888
+    },
+    {
+      "precision": "int8",
+      "weight_gib": 0.8417935371398926,
+      "peak_gib": 1.1798534393310547,
+      "ttft_ms": 259.5137999742292,
+      "decode_tokens_per_second": 8.54120452382228,
+      "load_seconds": 3.2915875999606214
+    },
+    {
+      "precision": "nf4",
+      "weight_gib": 0.6949429512023926,
+      "peak_gib": 1.0328764915466309,
+      "ttft_ms": 215.43770004063845,
+      "decode_tokens_per_second": 35.46292750321505,
+      "load_seconds": 2.4846042999997735
+    },
+    {
+      "precision": "nf4-dq",
+      "weight_gib": 0.6797347068786621,
+      "peak_gib": 1.0176682472229004,
+      "ttft_ms": 217.51059999223799,
+      "decode_tokens_per_second": 35.1913601298338,
+      "load_seconds": 2.196872800006531
+    }
+  ],
+  "batch": [
+    {
+      "batch_size": 1,
+      "records": 16,
+      "seconds": 51.52,
+      "records_per_second": 0.31,
+      "ttft_ms": 217.3,
+      "peak_gib": 1.03
+    },
+    {
+      "batch_size": 2,
+      "records": 16,
+      "seconds": 27.11,
+      "records_per_second": 0.59,
+      "ttft_ms": 405.9,
+      "peak_gib": 1.36
+    },
+    {
+      "batch_size": 4,
+      "records": 16,
+      "seconds": 17.96,
+      "records_per_second": 0.89,
+      "ttft_ms": 606.3,
+      "peak_gib": 2.02
+    },
+    {
+      "batch_size": 8,
+      "records": 16,
+      "seconds": 15.34,
+      "records_per_second": 1.04,
+      "ttft_ms": 1640.5,
+      "peak_gib": 3.34
+    },
+    {
+      "batch_size": 16,
+      "records": 16,
+      "seconds": 10.84,
+      "records_per_second": 1.48,
+      "ttft_ms": 3060.2,
+      "peak_gib": 5.96
+    }
+  ],
+  "matmul": [
+    {
+      "dtype": "fp32",
+      "size": 1024,
+      "tflops": 3.1289602558302625,
+      "note": ""
+    },
+    {
+      "dtype": "fp16",
+      "size": 1024,
+      "tflops": 0.5562671117993578,
+      "note": ""
+    },
+    {
+      "dtype": "bf16",
+      "size": 1024,
+      "tflops": 2.7438866094047527,
+      "note": ""
+    },
+    {
+      "dtype": "fp16 via fp32",
+      "size": 1024,
+      "tflops": 2.83229226652803,
+      "note": "upcast, multiply, downcast"
+    },
+    {
+      "dtype": "fp32",
+      "size": 2048,
+      "tflops": 4.789058001963334,
+      "note": ""
+    },
+    {
+      "dtype": "fp16",
+      "size": 2048,
+      "tflops": 0.5571686169484206,
+      "note": ""
+    },
+    {
+      "dtype": "bf16",
+      "size": 2048,
+      "tflops": 2.80512436844667,
+      "note": ""
+    },
+    {
+      "dtype": "fp16 via fp32",
+      "size": 2048,
+      "tflops": 4.540493337533584,
+      "note": "upcast, multiply, downcast"
+    },
+    {
+      "dtype": "fp32",
+      "size": 4096,
+      "tflops": 5.134210090985518,
+      "note": ""
+    },
+    {
+      "dtype": "fp16",
+      "size": 4096,
+      "tflops": 0.622487154976505,
+      "note": ""
+    },
+    {
+      "dtype": "bf16",
+      "size": 4096,
+      "tflops": 2.8256590353218605,
+      "note": ""
+    },
+    {
+      "dtype": "fp16 via fp32",
+      "size": 4096,
+      "tflops": 4.95120221671137,
+      "note": "upcast, multiply, downcast"
+    }
+  ],
+  "bandwidth": [
+    {
+      "dtype": "fp32",
+      "size": 2048,
+      "tflops": 249.14067366811923,
+      "note": "GB/s, element-wise"
+    },
+    {
+      "dtype": "fp16",
+      "size": 2048,
+      "tflops": 245.4100982336539,
+      "note": "GB/s, element-wise"
+    }
+  ],
+  "clock": {
+    "measured_peak_fp32_tflops": 5.13,
+    "quoted_peak_fp32_tflops": 5.44,
+    "fraction_of_quoted": 0.944,
+    "at_full_clock": true
+  },
+  "compute_dtype": [
+    {
+      "compute_dtype": "fp16",
+      "weight_gib": 0.441,
+      "ttft_ms": 1083.3,
+      "decode_tokens_per_second": 26.7
+    },
+    {
+      "compute_dtype": "bf16",
+      "weight_gib": 0.441,
+      "ttft_ms": 246.9,
+      "decode_tokens_per_second": 31.8
+    },
+    {
+      "compute_dtype": "fp32",
+      "weight_gib": 0.695,
+      "ttft_ms": 219.2,
+      "decode_tokens_per_second": 34.2
+    }
+  ]
+}
