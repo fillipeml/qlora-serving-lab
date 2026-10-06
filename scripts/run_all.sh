@@ -44,7 +44,15 @@ $PY -m qlora_lab tuned --split validation --limit 50 --model "$MODEL" --adapter 
 
 echo
 echo "=== 6. serving: six precisions, then batch size ==="
-$PY -m qlora_lab bench --parts precision batch --model "$MODEL" --split validation --limit 16
+$PY -m qlora_lab bench --parts precision compute batch --model "$MODEL" --split validation --limit 16
+
+echo
+echo "=== 6b. the training-side version of the same question ==="
+# Five steps each, which is enough for a rate and not enough to be worth an hour. fp16 is the
+# default of every tutorial for a card this size and is left until last for a reason.
+for mode in off bf16 fp16; do
+  $PY -m qlora_lab train --model "$MODEL" --autocast "$mode" --max-steps 5     --output "adapters/autocast-$mode" --eval-size 8
+done
 
 echo
 echo "=== 7. the test split, once ==="

@@ -183,6 +183,52 @@ def serving_sweep(
     return results
 
 
+def compute_dtype_sweep(
+    model_id: str,
+    prompts_: list[str],
+    precision: str = "nf4",
+    chat: bool = True,
+    max_new_tokens: int = 100,
+) -> list[dict]:
+    """The same 4-bit weights, dequantised into three different dtypes.
+
+    `bnb_4bit_compute_dtype` is the one line every published QLoRA recipe sets to fp16 or bf16
+    without comment. The 4-bit weights are unpacked and handed straight to the GEMM kernel that
+    `matmul_sweep` measures at an eighth of fp32 on this card, so on this hardware it is the
+    largest single serving decision available — and the convention is the wrong answer.
+
+    Memory does not change: the weights are still four bits. Only the arithmetic they are
+    multiplied in does.
+    """
+    from . import infer
+
+    warm_up_clocks()
+    rows: list[dict] = []
+    for name, dtype in (
+        ("fp16", torch.float16),
+        ("bf16", torch.bfloat16),
+        ("fp32", torch.float32),
+    ):
+        loaded = None
+        try:
+            loaded = infer.load(model_id, precision, compute_dtype=dtype)
+            run = infer.generate(
+                loaded, prompts_, max_new_tokens=max_new_tokens, batch_size=1, chat=chat
+            )
+            rows.append(
+                {
+                    "compute_dtype": name,
+                    "weight_gib": round(loaded.weight_gib, 3),
+                    "ttft_ms": round(run.median_ttft(), 1),
+                    "decode_tokens_per_second": round(run.median_decode_rate(), 1),
+                }
+            )
+        finally:
+            infer.release(loaded)
+            gc.collect()
+    return rows
+
+
 def batch_sweep(
     model_id: str,
     prompts_: list[str],

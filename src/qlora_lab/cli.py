@@ -167,6 +167,15 @@ def cmd_bench(args: argparse.Namespace) -> int:
                 f"{row['ttft_ms']:7.1f}ms {row['decode_tokens_per_second']:8.1f}t/s"
             )
 
+    if "compute" in args.parts:
+        payload["compute_dtype"] = bench.compute_dtype_sweep(args.model, texts)
+        print("\nthe same 4-bit weights, dequantised into three dtypes")
+        for row in payload["compute_dtype"]:
+            print(
+                f"  compute={row['compute_dtype']:5s} {row['weight_gib']:5.2f}Gi "
+                f"TTFT {row['ttft_ms']:8.1f}ms  decode {row['decode_tokens_per_second']:6.1f} t/s"
+            )
+
     if "batch" in args.parts:
         payload["batch"] = bench.batch_sweep(args.model, texts, precision=args.precision)
         print("\nbatch size")
