@@ -109,7 +109,81 @@ from. Both numbers are optimistic, in ways that do not cancel.
 
 ---
 
-<!-- HARDWARE -->
+## The hardware, which turned out to be the story
+
+The card is a **GTX 1660 Ti**: Turing, compute capability 7.5, 6 GiB — and TU116, the one Turing
+chip NVIDIA shipped **without tensor cores**. Everything below follows from that.
+
+Square matrix multiply, PyTorch 2.11 + CUDA 12.8, measured with the clocks warmed up (fp32 came
+out at 94% of the 5.44 TFLOP/s NVIDIA quotes for the card, which is how the benchmark says it was
+not throttled):
+
+| dtype | 1024² | 2048² | 4096² |
+| --- | ---: | ---: | ---: |
+| fp32 | 3.13 | 4.79 | **5.13** |
+| bf16 — emulated in software | 2.74 | 2.81 | 2.83 |
+| **fp16 — the default of nearly every recipe** | 0.56 | 0.56 | **0.62** |
+| fp16 upcast to fp32, multiplied, cast back | 2.83 | 4.54 | **4.95** |
+
+fp16 is not slightly slower. It is **eight times slower than fp32** on the same silicon, and
+casting fp16 operands *up* to fp32, multiplying, and casting the result back — strictly more
+work — is **eight times faster than multiplying them directly**.
+
+Three explanations ruled out:
+
+- **Not fp16 in general.** Element-wise fp16 reaches 245.4 GB/s against fp32's 249.1. The memory
+  path is fine; the loss is specific to GEMM.
+- **Not reduced-precision accumulation.** Toggling
+  `torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction` changes nothing.
+- **Not cuBLASLt.** `DISABLE_ADDMM_CUDA_LT=1` changes nothing.
+
+And the guard everyone branches on does not see any of it:
+
+```python
+torch.cuda.is_bf16_supported()                           # True
+torch.cuda.is_bf16_supported(including_emulation=False)  # False
+torch.cuda.get_device_capability()                       # (7, 5)
+```
+
+The default counts software emulation. A recipe that writes
+`bf16 = torch.cuda.is_bf16_supported()` takes the bf16 branch on a card with no bf16 units — and
+on this card that is accidentally the better of the two, for a reason its author did not intend.
+
+### What it costs at serving time
+
+Qwen2.5-0.5B-Instruct, the same sixteen prompts, batch 1, greedy:
+
+| precision | weights | peak | time to first token | decode |
+| --- | ---: | ---: | ---: | ---: |
+| fp32 | 1.84 GiB | 2.18 GiB | 210.9 ms | 43.9 tok/s |
+| **nf4** | **0.69 GiB** | **1.03 GiB** | **215.4 ms** | **35.5 tok/s** |
+| nf4 + double quant | 0.68 GiB | 1.02 GiB | 217.5 ms | 35.2 tok/s |
+| bf16 | 0.92 GiB | 1.09 GiB | 239.1 ms | 40.1 tok/s |
+| int8 | 0.84 GiB | 1.18 GiB | 259.5 ms | **8.5 tok/s** |
+| **fp16** | 0.92 GiB | 1.09 GiB | **1083.5 ms** | 34.2 tok/s |
+
+fp16 — the universal default — is **5.1× slower to first token** than fp32 at the same memory as
+bf16. NF4 lands within 2% of fp32's latency at **37% of the weight memory**, which is what makes
+it the configuration this repository serves on. `int8` is the other outlier: its time to first
+token is fine and its decode is four times slower than everything else, which is the known cost
+of the mixed-precision decomposition `LLM.int8()` does per matmul.
+
+### Batch size: throughput against latency, with a hard wall
+
+NF4, the same prompts, 100 new tokens:
+
+| batch | records/s | time to first token | peak VRAM |
+| ---: | ---: | ---: | ---: |
+| 1 | 0.31 | 217 ms | 1.03 GiB |
+| 2 | 0.59 | 406 ms | 1.36 GiB |
+| 4 | 0.89 | 606 ms | 2.02 GiB |
+| 8 | 1.04 | 1,641 ms | 3.34 GiB |
+| 16 | **1.48** | **3,060 ms** | **5.96 GiB** |
+
+Batching buys 4.8× the throughput and costs 14× the latency, and at 16 the card is 60 MiB from
+its limit. There is no 32. This is what batching is worth without a serving engine; vLLM's
+continuous batching exists precisely to avoid paying the latency for the throughput, and it is
+Linux-only, so it is not measured here and no claim is made about it.
 
 ---
 
