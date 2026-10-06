@@ -222,7 +222,12 @@ def train(
         ),
     )
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total_params = sum(p.numel() for p in model.parameters())
+    # Counted from the config, not from `numel()`. A 4-bit weight is packed two to a uint8, so
+    # summing the loaded tensors reports roughly two thirds of the model and makes the adapter
+    # look half again as large a fraction of it as it is.
+    total_params = getattr(model.config, "num_parameters", None) or sum(
+        p.numel() * (2 if p.dtype == torch.uint8 else 1) for p in model.parameters()
+    )
 
     rows = [
         encode(e, tokenizer, settings.max_length, settings.train_on_prompt) for e in train_examples
@@ -272,7 +277,7 @@ def train(
     model.train()
     print(
         f"{settings.model_id} at {settings.precision} | adapter {trainable:,} of "
-        f"{total_params:,} parameters ({trainable / total_params:.2%}) | "
+        f"~{total_params:,} base parameters ({trainable / total_params:.2%}) | "
         f"{total_steps} optimiser steps | autocast {settings.autocast} | "
         f"bf16 in hardware: {bf16_is_real()}"
     )
