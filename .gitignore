@@ -4,12 +4,17 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Adapters and benchmark output are a function of the code and the seed, and an adapter is
-# forty megabytes. The run metadata beside them is committed; the weights are not.
-adapters/*/adapter_model.safetensors
-adapters/*/tokenizer.json
-adapters/*/vocab.json
-adapters/*/merges.txt
+# Adapters are a function of the code, the seed and the data, and the weights are forty
+# megabytes. What is worth keeping is the run metadata beside them — the settings, the loss
+# curve, the skipped-step count, the peak VRAM — so that is the one file that is not ignored.
+adapters/*
+!adapters/*/
+adapters/*/*
+!adapters/*/run.json
+
+# Full stdout of a pipeline run: tens of thousands of progress-bar lines. The results it
+# produced are committed as JSON; the log is not.
+results/*.log
 
 # The sanitiser's own denylist is never committed: naming what must not appear is itself the
 # disclosure.
