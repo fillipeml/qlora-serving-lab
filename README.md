@@ -367,9 +367,119 @@ NF4, the same prompts, 100 new tokens:
 | 16 | **1.48** | **3,060 ms** | **5.96 GiB** |
 
 Batching buys 4.8× the throughput and costs 14× the latency, and at 16 the card is 60 MiB from
-its limit. There is no 32. This is what batching is worth without a serving engine; vLLM's
-continuous batching exists precisely to avoid paying the latency for the throughput, and it is
-Linux-only, so it is not measured here and no claim is made about it.
+its limit. There is no 32. That is what batching is worth **without** a serving engine, which is
+the comparison the next section makes.
+
+---
+
+### What a serving engine buys, measured
+
+Everything above is HuggingFace `transformers` with a fixed batch: every request in a batch waits
+for the batch to be assembled and then for its slowest member to finish. A serving engine does
+not work that way — vLLM admits and retires requests continuously, so a request that arrives late
+does not wait for one that arrived early, and a request that finishes early frees its slot at
+once. The claim is not that it is faster in aggregate. It is that **you stop paying latency for
+throughput**.
+
+vLLM 0.31.0, same card, same model, same fp32, same 64 Portuguese claim prompts, same 100 new
+tokens, greedy. Run under WSL2 because vLLM is Linux-only; the card is passed through, and
+`nvidia-smi` inside Ubuntu reports the same GTX 1660 Ti.
+
+| | fixed batch (transformers) | | continuous batching (vLLM) | |
+| ---: | ---: | ---: | ---: | ---: |
+| **concurrency** | **records/s** | **TTFT** | **records/s** | **TTFT p50** |
+| 1 | 0.36 | 206 ms | **0.80** | **77 ms** |
+| 2 | 0.64 | 392 ms | **1.63** | **59 ms** |
+| 4 | 1.14 | 590 ms | **3.29** | **62 ms** |
+| 8 | 1.16 | 1,947 ms | **6.18** | **75 ms** |
+| 16 | 1.53 | 3,492 ms | **7.08** | **116 ms** |
+
+At sixteen concurrent requests vLLM delivers **4.6× the throughput at one thirtieth of the median
+time to first token**. The shape matters more than either number: the fixed batch's latency grows
+17× from one request to sixteen, because that is what waiting for a batch means, while vLLM's
+median stays between 59 and 116 ms throughout. That is the whole argument for a serving engine,
+and it is visible here on a card that cost less than a monitor.
+
+The memory story is the same shape. The fixed batch peaked at 7.11 GiB on a 6,144 MiB card at
+batch 16 — the Windows display driver pages to system memory rather than failing, which is why
+throughput barely moves from batch 8 to 16 while latency nearly doubles again. vLLM reports
+`GPU KV cache size: 111,616 tokens, Maximum concurrency for 2,048 tokens per request: 54.50x`.
+Paged attention is why: it allocates the cache in blocks rather than reserving a rectangle big
+enough for every sequence's worst case.
+
+### And the engine's own default is the slow path here
+
+vLLM resolves `--dtype auto` against the model's declared dtype. Qwen2.5 asks for bfloat16, the
+card has none, and it falls back to **float16** — which on this chip is the kernel the top of this
+report measures at an eighth of fp32. Same engine, same everything, one flag:
+
+| concurrency | fp32 records/s | fp16 records/s | fp32 TTFT p50 | fp16 TTFT p50 |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.80 | 0.87 | 77 ms | 115 ms |
+| 2 | 1.63 | **0.29** | 59 ms | 246 ms |
+| 4 | 3.29 | 0.56 | 62 ms | 341 ms |
+| 8 | 6.18 | 1.09 | 75 ms | 345 ms |
+| 16 | **7.08** | **2.09** | 116 ms | 352 ms |
+
+**3.4× the throughput for one flag**, and the shape of the fp16 column is the more interesting
+half. From concurrency 2 onward it doubles cleanly — 0.29, 0.56, 1.09, 2.09 — so it scales
+perfectly. The outlier is concurrency **1**, which is three times faster per request than every
+level above it: one request alone takes 1.16 s, two together take 6.9 s each.
+
+That is what a card without tensor cores looks like from above. With a single sequence, decode is
+a matrix-*vector* product. From two sequences on, it is a matrix-*matrix* product — and that is
+the fp16 GEMM measured at 0.62 TFLOP/s against fp32's 5.13 at the top of this report. **The fp16
+penalty on this chip does not appear until you batch**, which is exactly why a single-request
+benchmark would never find it, and why the same flag costs nothing at concurrency 1 and
+everything at concurrency 16.
+
+In fp32 the same transition is free: 0.80 to 1.63 is a clean doubling, with no cliff anywhere.
+
+fp16 does buy something real — `GPU KV cache size: 311,264 tokens, Maximum concurrency 151.98x`
+against fp32's 111,616 and 54.50x, because a half-precision cache is half the bytes. On this card
+that is 2.8× the cache for 3.4× less throughput. On a card with tensor cores it would be free.
+
+### What the log says, and why it is quoted rather than summarised
+
+```
+Upcasting torch.bfloat16 to torch.float32.
+Turing devices tensor cores do not support float32 matmul. To workaround this limitation,
+  vLLM will set 'ieee' input precision for chunked prefill triton kernels.
+Cannot use FA version 2 is not supported due to FA2 is only supported on devices with
+  compute capability >= 8
+Using TRITON_ATTN attention backend out of potential backends: ['TRITON_ATTN', 'FLEX_ATTENTION'].
+GPU KV cache size: 111,616 tokens, Maximum concurrency for 2,048 tokens per request: 54.50x
+```
+
+vLLM knows about this class of card and says so: there is a branch in it written for
+`get_device_capability() == (7, 5)`. FlashAttention is refused outright rather than silently
+degraded, and the Triton backend is what remains. None of that is a problem to be solved; it is
+the configuration the numbers above were measured in, and a benchmark that does not record it
+cannot be compared with anything.
+
+### Reproducing it
+
+Under WSL2 on Windows, with the card passed through:
+
+```bash
+# A C compiler, because Triton compiles its kernels at run time:
+sudo apt install -y build-essential
+
+uv venv --python 3.12 ~/.venvs/vllm
+uv pip install --python ~/.venvs/vllm/bin/python vllm aiohttp --torch-backend=auto
+python scripts/vllm_bench.py --dtype float32 --requests 64 --levels 1 2 4 8 16 --enforce-eager
+python scripts/vllm_bench.py --dtype float16 --requests 64 --levels 1 2 4 8 16 --enforce-eager
+```
+
+Two things that will stop you, both of which did:
+
+- **`gpu_memory_utilization` is a fraction of total VRAM, not of free.** On a 6 GiB card with a
+  desktop holding about a gigabyte, 0.85 asks for 5.1 GiB of the 5.01 GiB that exist and the
+  engine refuses to start — correctly, and with a message that says exactly that. 0.78 fits.
+- **`--enforce-eager` is used here and is not free.** It disables `torch.compile` and CUDA-graph
+  capture, which cost minutes of first-start and extra VRAM this card does not have. It also
+  removes part of what a production deployment would be measuring, so these numbers are a floor
+  on what vLLM can do here rather than its best.
 
 ---
 
@@ -407,10 +517,12 @@ once, and the way to make that true is to make it the inconvenient option.
 
 ## What is not here
 
-- **vLLM, TGI and Triton.** vLLM requires compute capability 7.5, which this card meets exactly,
-  and Linux, which this machine does not run. Continuous batching and paged attention are
-  therefore not measured and no claim is made about them. The batch sweep is what batching buys
-  without a serving engine.
+- **TGI and Triton.** vLLM is measured above, under WSL2. Hugging Face TGI and NVIDIA Triton are
+  not, and no claim is made about them. Nor is TensorRT-LLM, which requires compute capability
+  8.0 and so cannot run on this card at all.
+- **vLLM at its best.** The numbers above use `--enforce-eager`, which disables `torch.compile`
+  and CUDA-graph capture to fit a 6 GiB card and keep first-start to minutes. They are a floor on
+  what vLLM does here, not its ceiling.
 - **A larger model, trained.** Qwen2.5-1.5B fits, and supplied the training-mode timings in
   `docs/NOTES.md`, but a full run on it is about an hour and a half on this card. A scaling row
   measured once is not worth that in a report about what a cheap card can do.
