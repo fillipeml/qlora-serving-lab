@@ -8,8 +8,8 @@
     "is_bf16_supported_default": true,
     "bf16_in_hardware": false,
     "sm_clock_mhz": "1500",
-    "temperature_c": "65",
-    "power_w": "20.71"
+    "temperature_c": "50",
+    "power_w": "26.14"
   },
   "serving": [
     {
@@ -65,42 +65,42 @@
     {
       "batch_size": 1,
       "records": 16,
-      "seconds": 51.52,
-      "records_per_second": 0.31,
-      "ttft_ms": 217.3,
-      "peak_gib": 1.03
+      "seconds": 43.94,
+      "records_per_second": 0.36,
+      "ttft_ms": 205.9,
+      "peak_gib": 2.18
     },
     {
       "batch_size": 2,
       "records": 16,
-      "seconds": 27.11,
-      "records_per_second": 0.59,
-      "ttft_ms": 405.9,
-      "peak_gib": 1.36
+      "seconds": 25.01,
+      "records_per_second": 0.64,
+      "ttft_ms": 392.1,
+      "peak_gib": 2.51
     },
     {
       "batch_size": 4,
       "records": 16,
-      "seconds": 17.96,
-      "records_per_second": 0.89,
-      "ttft_ms": 606.3,
-      "peak_gib": 2.02
+      "seconds": 14.04,
+      "records_per_second": 1.14,
+      "ttft_ms": 590.1,
+      "peak_gib": 3.17
     },
     {
       "batch_size": 8,
       "records": 16,
-      "seconds": 15.34,
-      "records_per_second": 1.04,
-      "ttft_ms": 1640.5,
-      "peak_gib": 3.34
+      "seconds": 13.85,
+      "records_per_second": 1.16,
+      "ttft_ms": 1946.8,
+      "peak_gib": 4.48
     },
     {
       "batch_size": 16,
       "records": 16,
-      "seconds": 10.84,
-      "records_per_second": 1.48,
-      "ttft_ms": 3060.2,
-      "peak_gib": 5.96
+      "seconds": 10.46,
+      "records_per_second": 1.53,
+      "ttft_ms": 3492.3,
+      "peak_gib": 7.11
     }
   ],
   "matmul": [
