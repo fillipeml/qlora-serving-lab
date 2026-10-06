@@ -354,8 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--parts",
         nargs="+",
-        default=["matmul", "precision", "batch"],
-        choices=("matmul", "precision", "batch"),
+        default=["matmul", "precision", "compute", "batch"],
+        choices=("matmul", "precision", "compute", "batch"),
     )
     p.set_defaults(func=cmd_bench)
 
