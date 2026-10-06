@@ -1,17 +1,19 @@
 """What the model is told, and why the fine-tuned one is told almost nothing.
 
-Three prompts, and the difference between them is a result rather than a detail:
+Three prompts, and the difference between them is a result rather than a detail. Median tokens
+over 40 test records, counted with Qwen2.5's own tokeniser including its chat template:
 
-    zero-shot    ~430 tokens of instruction, every rule spelled out
-    few-shot     ~430 plus four worked examples, ~900 tokens
-    fine-tuned   ~45 tokens — the message, the date, and where to start
+    zero-shot      540    the instruction alone is 428 of them
+    few-shot     1,175    the same instruction plus four worked examples
+    fine-tuned      88    the message, the date, and where to start
 
-The instruction prompt is long because it has to be: it carries the schema, the eight enum
-values, the date arithmetic and, at length, the rule that an unstated field is `null` and not
-`false`. A fine-tuned model has that in its weights. Those ~390 tokens come off the front of
-every single request, which is why the serving benchmark reports prompt tokens next to latency:
-on this hardware prefill is most of the time to first token, and the cheapest way to make a
-model faster is to stop explaining the job to it.
+The instruction is long because it has to be: it carries the schema, the eight enum values, the
+date arithmetic and, at length, the rule that an unstated field is `null` and not `false`. A
+fine-tuned model has all of that in its weights, and its prompt is **6.1x shorter than the
+zero-shot one and 13.4x shorter than the few-shot one**. Those tokens come off the front of
+every single request, which is why the serving benchmark reports prompt tokens beside latency:
+on this hardware prefill dominates time to first token, and the cheapest way to make a model
+faster is to stop explaining the job to it on every call.
 
 The few-shot examples are drawn from the training split only, by a seeded sampler, and the same
 four are used for every record. Sampling fresh examples per record would make the comparison
